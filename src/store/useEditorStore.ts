@@ -3,26 +3,33 @@ import { v4 as uuid } from 'uuid'
 import type {
   AspectRatioKey,
   CanvasSize,
+  CaptionState,
   ElementRect,
+  IconElement,
   ImageElement,
   LogoPosition,
   ProjectState,
   Slide,
   SlideBackground,
   SlideElement,
+  SlideTag,
   TextElement,
   TextRole,
   TextStyle,
   ThemeMode,
 } from '../types'
 import { ASPECT_RATIOS, MAX_SLIDES } from '../types'
-import { createImageElement, createTextElement, getTemplate, TEMPLATES } from '../lib/templates'
+import { createIconElement, createImageElement, createTextElement, getTemplate, TEMPLATES } from '../lib/templates'
 import { defaultBrandKit, addBrandColor, removeBrandColor, setBrandColor, setBrandFont } from '../lib/brandKit'
 
 const STORAGE_KEY = 'carousel-generator:project:v1'
 const MAX_HISTORY = 50
 
-function makeSlide(canvasSize: CanvasSize, templateId = TEMPLATES[0].id): Slide {
+function emptyCaption(): CaptionState {
+  return { hook: '', body: '', cta: '', hashtags: [] }
+}
+
+function makeSlide(canvasSize: CanvasSize, templateId = TEMPLATES[0].id, label = 'Slide', tag: SlideTag = 'none'): Slide {
   const template = getTemplate(templateId)
   const { background, elements } = template.build(canvasSize)
   return {
@@ -30,12 +37,14 @@ function makeSlide(canvasSize: CanvasSize, templateId = TEMPLATES[0].id): Slide 
     name: template.name,
     background,
     elements,
+    label,
+    tag,
   }
 }
 
 function defaultProject(): ProjectState {
   const size = ASPECT_RATIOS['4:5']
-  const slide = makeSlide(size)
+  const slide = makeSlide(size, TEMPLATES[0].id, 'Slide 1')
   return {
     slides: [slide],
     activeSlideId: slide.id,
@@ -43,7 +52,33 @@ function defaultProject(): ProjectState {
     aspectRatio: '4:5',
     brandKit: defaultBrandKit(),
     showSafeZone: false,
-    theme: 'light',
+    theme: 'dark',
+    caption: emptyCaption(),
+    suggestedAudio: '',
+  }
+}
+
+/** Fills in fields that may be missing from a project saved by an older version. */
+function migrateProject(parsed: Partial<ProjectState> & { slides: Slide[] }): ProjectState {
+  const slides = parsed.slides.map((slide, i) => ({
+    ...slide,
+    label: slide.label ?? `Slide ${i + 1}`,
+    tag: slide.tag ?? 'none',
+    elements: slide.elements.map((el) => {
+      if (el.kind === 'text') return { ...el, autoFit: el.autoFit ?? true }
+      return el
+    }),
+  }))
+  return {
+    slides,
+    activeSlideId: parsed.activeSlideId ?? slides[0]?.id ?? null,
+    selectedElementId: parsed.selectedElementId ?? null,
+    aspectRatio: parsed.aspectRatio ?? '4:5',
+    brandKit: parsed.brandKit ?? defaultBrandKit(),
+    showSafeZone: parsed.showSafeZone ?? false,
+    theme: parsed.theme ?? 'dark',
+    caption: parsed.caption ?? emptyCaption(),
+    suggestedAudio: parsed.suggestedAudio ?? '',
   }
 }
 
@@ -51,9 +86,9 @@ function loadProject(): ProjectState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return defaultProject()
-    const parsed = JSON.parse(raw) as ProjectState
+    const parsed = JSON.parse(raw) as Partial<ProjectState> & { slides?: Slide[] }
     if (!parsed.slides || parsed.slides.length === 0) return defaultProject()
-    return parsed
+    return migrateProject(parsed as Partial<ProjectState> & { slides: Slide[] })
   } catch {
     return defaultProject()
   }
@@ -80,13 +115,25 @@ function extractProject(state: EditorState): ProjectState {
     brandKit: state.brandKit,
     showSafeZone: state.showSafeZone,
     theme: state.theme,
+    caption: state.caption,
+    suggestedAudio: state.suggestedAudio,
   }
 }
+
+export interface ImportBlock {
+  headline: string
+  body: string
+  templateId: string
+  tag: SlideTag
+}
+
+export type BulkEditKind = 'font' | 'accentColor' | 'backgroundType' | 'logoPosition'
 
 export interface EditorState extends ProjectState {
   past: ProjectState[]
   future: ProjectState[]
   isSaved: boolean
+  lastToast: string | null
 
   // Slide actions
   addSlide: (templateId?: string) => void
@@ -95,28 +142,32 @@ export interface EditorState extends ProjectState {
   reorderSlides: (orderedIds: string[]) => void
   setActiveSlide: (slideId: string) => void
   applyTemplate: (slideId: string, templateId: string) => void
-  importSlides: (
-    blocks: { headline: string; body: string }[],
-    templateId: string,
-    mode: 'replace' | 'append',
-  ) => void
+  importSlides: (blocks: ImportBlock[], mode: 'replace' | 'append') => void
+  renameSlide: (slideId: string, label: string) => void
 
   // Element actions
   selectElement: (elementId: string | null) => void
   addTextElement: (role: TextRole) => void
   addImageElement: () => void
+  addIconElementToSlide: (iconId: string) => void
   updateElementRect: (slideId: string, elementId: string, rect: Partial<ElementRect>) => void
   updateTextContent: (slideId: string, elementId: string, content: string) => void
   updateTextStyle: (slideId: string, elementId: string, style: Partial<TextStyle>) => void
+  updateTextAutoFit: (slideId: string, elementId: string, autoFit: boolean) => void
   updateImageProps: (
     slideId: string,
     elementId: string,
     props: Partial<Pick<ImageElement, 'src' | 'fit' | 'opacity' | 'borderRadius'>>,
   ) => void
+  updateIconProps: (slideId: string, elementId: string, props: Partial<Pick<IconElement, 'iconId' | 'color'>>) => void
   deleteElement: (slideId: string, elementId: string) => void
 
   // Background actions
   updateBackground: (slideId: string, background: Partial<SlideBackground>) => void
+
+  // Bulk edit ("Apply to all")
+  applyToAllSlides: (kind: BulkEditKind, value: string) => void
+  clearToast: () => void
 
   // Canvas / view
   setAspectRatio: (ratio: AspectRatioKey) => void
@@ -132,6 +183,10 @@ export interface EditorState extends ProjectState {
   setLogo: (src: string | null) => void
   setLogoPosition: (position: LogoPosition) => void
   setLogoSize: (size: number) => void
+
+  // Caption + hashtags
+  updateCaption: (partial: Partial<CaptionState>) => void
+  setSuggestedAudio: (value: string) => void
 
   // History
   undo: () => void
@@ -176,12 +231,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   past: [],
   future: [],
   isSaved: true,
+  lastToast: null,
 
   addSlide: (templateId) => {
     commit(set, get, (draft) => {
       if (draft.slides.length >= MAX_SLIDES) return draft
       const size = canvasSizeFor(draft.aspectRatio)
-      const slide = makeSlide(size, templateId)
+      const slide = makeSlide(size, templateId, `Slide ${draft.slides.length + 1}`)
       draft.slides.push(slide)
       draft.activeSlideId = slide.id
       draft.selectedElementId = null
@@ -199,6 +255,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ...original,
         id: uuid(),
         name: `${original.name} copy`,
+        label: `${original.label} copy`,
         elements: original.elements.map((el) => ({ ...el, id: uuid() })),
       }
       draft.slides.splice(index + 1, 0, copy)
@@ -252,12 +309,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     })
   },
 
-  importSlides: (blocks, templateId, mode) => {
+  importSlides: (blocks, mode) => {
     commit(set, get, (draft) => {
       const size = canvasSizeFor(draft.aspectRatio)
       const capped = blocks.slice(0, MAX_SLIDES)
-      const newSlides = capped.map((b) => {
-        const slide = makeSlide(size, templateId)
+      const startIndex = mode === 'append' ? draft.slides.length : 0
+      const newSlides = capped.map((b, i) => {
+        const slide = makeSlide(size, b.templateId, `Slide ${startIndex + i + 1}`, b.tag)
         for (const el of slide.elements) {
           if (el.kind !== 'text') continue
           if (el.role === 'headline') el.content = b.headline
@@ -275,6 +333,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
       draft.activeSlideId = draft.slides[0]?.id ?? null
       draft.selectedElementId = null
+      return draft
+    })
+  },
+
+  renameSlide: (slideId, label) => {
+    commit(set, get, (draft) => {
+      const slide = draft.slides.find((s) => s.id === slideId)
+      if (!slide) return draft
+      slide.label = label
       return draft
     })
   },
@@ -326,6 +393,24 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     })
   },
 
+  addIconElementToSlide: (iconId) => {
+    commit(set, get, (draft) => {
+      const slide = getActiveSlide(draft)
+      if (!slide) return draft
+      const size = canvasSizeFor(draft.aspectRatio)
+      const el = createIconElement(iconId, {
+        x: size.width * 0.4,
+        y: size.height * 0.4,
+        width: size.width * 0.2,
+        height: size.width * 0.2,
+        rotation: 0,
+      })
+      slide.elements.push(el)
+      draft.selectedElementId = el.id
+      return draft
+    })
+  },
+
   updateElementRect: (slideId, elementId, rectPartial) => {
     commit(set, get, (draft) => {
       const slide = draft.slides.find((s) => s.id === slideId)
@@ -356,11 +441,31 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     })
   },
 
+  updateTextAutoFit: (slideId, elementId, autoFit) => {
+    commit(set, get, (draft) => {
+      const slide = draft.slides.find((s) => s.id === slideId)
+      const el = slide?.elements.find((e) => e.id === elementId) as TextElement | undefined
+      if (!el || el.kind !== 'text') return draft
+      el.autoFit = autoFit
+      return draft
+    })
+  },
+
   updateImageProps: (slideId, elementId, props) => {
     commit(set, get, (draft) => {
       const slide = draft.slides.find((s) => s.id === slideId)
       const el = slide?.elements.find((e) => e.id === elementId) as ImageElement | undefined
       if (!el || el.kind !== 'image') return draft
+      Object.assign(el, props)
+      return draft
+    })
+  },
+
+  updateIconProps: (slideId, elementId, props) => {
+    commit(set, get, (draft) => {
+      const slide = draft.slides.find((s) => s.id === slideId)
+      const el = slide?.elements.find((e) => e.id === elementId) as IconElement | undefined
+      if (!el || el.kind !== 'icon') return draft
       Object.assign(el, props)
       return draft
     })
@@ -384,6 +489,33 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return draft
     })
   },
+
+  applyToAllSlides: (kind, value) => {
+    commit(set, get, (draft) => {
+      for (const slide of draft.slides) {
+        if (kind === 'font') {
+          for (const el of slide.elements) {
+            if (el.kind === 'text') el.style = { ...el.style, fontFamily: value }
+          }
+        } else if (kind === 'accentColor') {
+          for (const el of slide.elements) {
+            if (el.kind === 'text' && (el.role === 'slideNumber' || el.role === 'cta')) {
+              el.style = { ...el.style, color: value }
+            }
+            if (el.kind === 'icon') el.color = value
+          }
+        } else if (kind === 'backgroundType') {
+          slide.background = { ...slide.background, type: value as SlideBackground['type'] }
+        } else if (kind === 'logoPosition') {
+          draft.brandKit = { ...draft.brandKit, logoPosition: value as LogoPosition }
+        }
+      }
+      return draft
+    })
+    set(() => ({ lastToast: `Applied to all ${get().slides.length} slides` }))
+  },
+
+  clearToast: () => set(() => ({ lastToast: null })),
 
   setAspectRatio: (ratio) => {
     commit(set, get, (draft) => {
@@ -449,6 +581,20 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setLogoSize: (size) => {
     commit(set, get, (draft) => {
       draft.brandKit = { ...draft.brandKit, logoSize: size }
+      return draft
+    })
+  },
+
+  updateCaption: (partial) => {
+    commit(set, get, (draft) => {
+      draft.caption = { ...draft.caption, ...partial }
+      return draft
+    })
+  },
+
+  setSuggestedAudio: (value) => {
+    commit(set, get, (draft) => {
+      draft.suggestedAudio = value
       return draft
     })
   },

@@ -2,6 +2,7 @@ import { v4 as uuid } from 'uuid'
 import type {
   CanvasSize,
   ElementRect,
+  IconElement,
   ImageElement,
   SlideBackground,
   SlideElement,
@@ -11,14 +12,25 @@ import type {
   TextStyle,
 } from '../types'
 
+// ---------- Cyber palette (shared across all templates) ----------
+
+export const CYBER_PALETTE = {
+  bg: '#0A0E1A',
+  alert: '#FF4D4D',
+  safe: '#00E599',
+  text: '#F5F5F5',
+  card: '#1A1F2E',
+  muted: '#8B95A5',
+} as const
+
 // ---------- Factories ----------
 
 export function defaultBackground(overrides: Partial<SlideBackground> = {}): SlideBackground {
   return {
     type: 'solid',
-    color: '#111111',
-    gradientFrom: '#FF5A1F',
-    gradientTo: '#111111',
+    color: CYBER_PALETTE.bg,
+    gradientFrom: CYBER_PALETTE.alert,
+    gradientTo: CYBER_PALETTE.bg,
     gradientAngle: 135,
     imageSrc: null,
     imageFit: 'cover',
@@ -35,10 +47,10 @@ function rect(x: number, y: number, width: number, height: number, rotation = 0)
 
 function textStyle(overrides: Partial<TextStyle> = {}): TextStyle {
   return {
-    fontFamily: 'Inter',
+    fontFamily: 'Space Grotesk',
     fontSize: 48,
     fontWeight: 700,
-    color: '#FFFFFF',
+    color: CYBER_PALETTE.text,
     align: 'left',
     lineHeight: 1.2,
     letterSpacing: 0,
@@ -55,6 +67,7 @@ export function createTextElement(
   content: string,
   elRect: ElementRect,
   styleOverrides: Partial<TextStyle> = {},
+  autoFit = true,
 ): TextElement {
   return {
     id: uuid(),
@@ -64,6 +77,7 @@ export function createTextElement(
     content,
     style: textStyle(styleOverrides),
     locked: false,
+    autoFit,
   }
 }
 
@@ -84,31 +98,43 @@ export function createImageElement(
   }
 }
 
+export function createIconElement(
+  iconId: string,
+  elRect: ElementRect,
+  color: string = CYBER_PALETTE.safe,
+): IconElement {
+  return {
+    id: uuid(),
+    kind: 'icon',
+    rect: elRect,
+    iconId,
+    color,
+    locked: false,
+  }
+}
+
 // ---------- Templates ----------
 // Each build() receives the current canvas size (e.g. 1080x1350) so
 // element positions scale proportionally to the active aspect ratio.
+// All 10 templates share the CYBER_PALETTE.
 
-function boldHeadline(size: CanvasSize) {
+function threatBrief(size: CanvasSize) {
   const { width: w, height: h } = size
   return {
-    background: defaultBackground({ type: 'gradient', gradientFrom: '#FF5A1F', gradientTo: '#111111', gradientAngle: 135 }),
+    background: defaultBackground({ type: 'solid', color: CYBER_PALETTE.bg }),
     elements: [
+      createIconElement('warning-triangle', rect(w * 0.08, h * 0.08, w * 0.12, w * 0.12), CYBER_PALETTE.alert),
       createTextElement(
         'headline',
-        'Your Bold Headline Goes Here',
-        rect(w * 0.08, h * 0.35, w * 0.84, h * 0.3),
-        { fontFamily: 'Poppins', fontSize: 88, fontWeight: 900, align: 'left', lineHeight: 1.05 },
+        'A hacker just found a new way in.',
+        rect(w * 0.08, h * 0.32, w * 0.84, h * 0.32),
+        { fontSize: 76, fontWeight: 700, align: 'left', lineHeight: 1.08, color: CYBER_PALETTE.text },
       ),
-      createTextElement(
-        'subheadline',
-        'A supporting line that adds context',
-        rect(w * 0.08, h * 0.68, w * 0.84, h * 0.1),
-        { fontFamily: 'Inter', fontSize: 34, fontWeight: 500, align: 'left' },
-      ),
-      createTextElement('slideNumber', '01', rect(w * 0.08, h * 0.06, w * 0.2, h * 0.06), {
+      createTextElement('cta', 'SWIPE →', rect(w * 0.08, h * 0.88, w * 0.4, h * 0.06), {
         fontFamily: 'Inter',
-        fontSize: 28,
-        fontWeight: 700,
+        fontSize: 26,
+        fontWeight: 800,
+        color: CYBER_PALETTE.alert,
         align: 'left',
       }),
     ] as SlideElement[],
@@ -118,55 +144,27 @@ function boldHeadline(size: CanvasSize) {
 function listicle(size: CanvasSize) {
   const { width: w, height: h } = size
   return {
-    background: defaultBackground({ type: 'solid', color: '#0F172A' }),
+    background: defaultBackground({ type: 'solid', color: CYBER_PALETTE.card }),
     elements: [
-      createTextElement('slideNumber', '3 Tips', rect(w * 0.08, h * 0.06, w * 0.5, h * 0.06), {
-        fontSize: 28,
-        fontWeight: 700,
-        color: '#FF5A1F',
+      createTextElement('slideNumber', 'TIPS', rect(w * 0.08, h * 0.06, w * 0.5, h * 0.06), {
+        fontFamily: 'Inter',
+        fontSize: 26,
+        fontWeight: 800,
+        color: CYBER_PALETTE.safe,
         align: 'left',
       }),
       createTextElement(
         'headline',
-        'Listicle Title',
-        rect(w * 0.08, h * 0.14, w * 0.84, h * 0.14),
-        { fontFamily: 'Poppins', fontSize: 56, fontWeight: 800, align: 'left' },
+        '3 ways to lock down your accounts',
+        rect(w * 0.08, h * 0.14, w * 0.84, h * 0.16),
+        { fontSize: 52, fontWeight: 700, align: 'left', color: CYBER_PALETTE.text },
       ),
       createTextElement(
         'body',
-        '1. First point goes here\n2. Second point goes here\n3. Third point goes here',
-        rect(w * 0.08, h * 0.34, w * 0.84, h * 0.5),
-        { fontFamily: 'Inter', fontSize: 36, fontWeight: 500, align: 'left', lineHeight: 1.6 },
+        '- Use a unique password manager\n- Turn on two-factor authentication\n- Review app permissions monthly',
+        rect(w * 0.08, h * 0.36, w * 0.84, h * 0.48),
+        { fontFamily: 'Inter', fontSize: 34, fontWeight: 500, align: 'left', lineHeight: 1.6, color: CYBER_PALETTE.text },
       ),
-    ] as SlideElement[],
-  }
-}
-
-function quote(size: CanvasSize) {
-  const { width: w, height: h } = size
-  return {
-    background: defaultBackground({ type: 'solid', color: '#FAF7F2' }),
-    elements: [
-      createTextElement(
-        'headline',
-        '\u201CInsert a powerful quote that inspires your audience.\u201D',
-        rect(w * 0.1, h * 0.32, w * 0.8, h * 0.36),
-        {
-          fontFamily: 'Playfair Display',
-          fontSize: 52,
-          fontWeight: 700,
-          color: '#111111',
-          align: 'center',
-          lineHeight: 1.3,
-        },
-      ),
-      createTextElement('subheadline', '\u2014 Author Name', rect(w * 0.1, h * 0.72, w * 0.8, h * 0.06), {
-        fontFamily: 'Inter',
-        fontSize: 28,
-        fontWeight: 600,
-        color: '#666666',
-        align: 'center',
-      }),
     ] as SlideElement[],
   }
 }
@@ -174,125 +172,265 @@ function quote(size: CanvasSize) {
 function beforeAfter(size: CanvasSize) {
   const { width: w, height: h } = size
   return {
-    background: defaultBackground({ type: 'solid', color: '#111111' }),
+    background: defaultBackground({ type: 'solid', color: CYBER_PALETTE.bg }),
     elements: [
-      createImageElement(rect(w * 0.05, h * 0.18, w * 0.42, h * 0.5), { borderRadius: 24 }),
-      createImageElement(rect(w * 0.53, h * 0.18, w * 0.42, h * 0.5), { borderRadius: 24 }),
+      createImageElement(rect(w * 0.05, h * 0.18, w * 0.42, h * 0.46), { borderRadius: 12 }),
+      createImageElement(rect(w * 0.53, h * 0.18, w * 0.42, h * 0.46), { borderRadius: 12 }),
       createTextElement('subheadline', 'BEFORE', rect(w * 0.05, h * 0.1, w * 0.42, h * 0.06), {
+        fontFamily: 'Inter',
         fontWeight: 800,
-        fontSize: 30,
+        fontSize: 28,
         align: 'center',
+        color: CYBER_PALETTE.alert,
       }),
       createTextElement('subheadline', 'AFTER', rect(w * 0.53, h * 0.1, w * 0.42, h * 0.06), {
+        fontFamily: 'Inter',
         fontWeight: 800,
-        fontSize: 30,
+        fontSize: 28,
         align: 'center',
-        color: '#FF5A1F',
+        color: CYBER_PALETTE.safe,
       }),
       createTextElement(
         'headline',
-        'The Transformation',
-        rect(w * 0.08, h * 0.74, w * 0.84, h * 0.1),
-        { fontFamily: 'Poppins', fontSize: 44, fontWeight: 800, align: 'center' },
+        'Weak password vs. passphrase',
+        rect(w * 0.08, h * 0.7, w * 0.84, h * 0.14),
+        { fontSize: 42, fontWeight: 700, align: 'center', color: CYBER_PALETTE.text },
       ),
     ] as SlideElement[],
   }
 }
 
-function tutorialStep(size: CanvasSize) {
+function statDrop(size: CanvasSize) {
   const { width: w, height: h } = size
   return {
-    background: defaultBackground({ type: 'gradient', gradientFrom: '#2563EB', gradientTo: '#111827', gradientAngle: 160 }),
+    background: defaultBackground({ type: 'gradient', gradientFrom: CYBER_PALETTE.card, gradientTo: CYBER_PALETTE.bg, gradientAngle: 160 }),
     elements: [
-      createTextElement('slideNumber', 'STEP 1', rect(w * 0.08, h * 0.08, w * 0.5, h * 0.08), {
-        fontSize: 32,
-        fontWeight: 800,
-        color: '#FF5A1F',
+      createTextElement('headline', '94%', rect(w * 0.08, h * 0.3, w * 0.84, h * 0.3), {
+        fontSize: 220,
+        fontWeight: 700,
+        align: 'center',
+        color: CYBER_PALETTE.safe,
+        lineHeight: 1,
+      }),
+      createTextElement(
+        'subheadline',
+        'of breaches start with a phishing email',
+        rect(w * 0.1, h * 0.62, w * 0.8, h * 0.12),
+        { fontFamily: 'Inter', fontSize: 32, fontWeight: 600, align: 'center', color: CYBER_PALETTE.text },
+      ),
+      createTextElement('cta', 'Source: Verizon DBIR', rect(w * 0.1, h * 0.88, w * 0.8, h * 0.05), {
+        fontFamily: 'Inter',
+        fontSize: 20,
+        fontWeight: 500,
+        align: 'center',
+        color: CYBER_PALETTE.muted,
+      }),
+    ] as SlideElement[],
+  }
+}
+
+function quoteCard(size: CanvasSize) {
+  const { width: w, height: h } = size
+  return {
+    background: defaultBackground({ type: 'solid', color: CYBER_PALETTE.card }),
+    elements: [
+      createTextElement('slideNumber', '\u201C', rect(w * 0.08, h * 0.1, w * 0.3, h * 0.16), {
+        fontSize: 160,
+        fontWeight: 700,
+        color: CYBER_PALETTE.safe,
+        align: 'left',
+        lineHeight: 1,
+      }),
+      createTextElement(
+        'headline',
+        'The only truly secure system is one that is powered off.',
+        rect(w * 0.1, h * 0.32, w * 0.8, h * 0.34),
+        { fontSize: 48, fontWeight: 700, align: 'left', color: CYBER_PALETTE.text, lineHeight: 1.25 },
+      ),
+      createTextElement('subheadline', '\u2014 Gene Spafford', rect(w * 0.1, h * 0.72, w * 0.8, h * 0.06), {
+        fontFamily: 'Inter',
+        fontSize: 26,
+        fontWeight: 600,
+        color: CYBER_PALETTE.safe,
         align: 'left',
       }),
-      createTextElement(
-        'headline',
-        'Do this first',
-        rect(w * 0.08, h * 0.2, w * 0.84, h * 0.14),
-        { fontFamily: 'Poppins', fontSize: 56, fontWeight: 800, align: 'left' },
-      ),
-      createTextElement(
-        'body',
-        'Explain the step in a couple of clear, simple sentences so the reader can follow along easily.',
-        rect(w * 0.08, h * 0.38, w * 0.84, h * 0.3),
-        { fontSize: 34, fontWeight: 500, align: 'left', lineHeight: 1.5 },
-      ),
     ] as SlideElement[],
   }
 }
 
-function tipsCarousel(size: CanvasSize) {
+function stepByStep(size: CanvasSize) {
   const { width: w, height: h } = size
   return {
-    background: defaultBackground({ type: 'solid', color: '#FFFFFF' }),
+    background: defaultBackground({ type: 'solid', color: CYBER_PALETTE.bg }),
     elements: [
-      createTextElement('slideNumber', 'TIP #1', rect(w * 0.08, h * 0.08, w * 0.5, h * 0.06), {
+      createTextElement('slideNumber', 'STEP 1/5', rect(w * 0.08, h * 0.08, w * 0.5, h * 0.06), {
+        fontFamily: 'Inter',
         fontSize: 26,
         fontWeight: 800,
-        color: '#FF5A1F',
+        color: CYBER_PALETTE.safe,
         align: 'left',
       }),
       createTextElement(
         'headline',
-        'A short, punchy tip title',
-        rect(w * 0.08, h * 0.16, w * 0.84, h * 0.18),
-        { fontFamily: 'Poppins', fontSize: 52, fontWeight: 800, color: '#111111', align: 'left' },
+        'Check the sender address',
+        rect(w * 0.08, h * 0.2, w * 0.84, h * 0.16),
+        { fontSize: 52, fontWeight: 700, align: 'left', color: CYBER_PALETTE.text },
       ),
       createTextElement(
         'body',
-        'Add a sentence or two of detail that expands on the tip and gives the reader something actionable.',
-        rect(w * 0.08, h * 0.42, w * 0.84, h * 0.3),
-        { fontSize: 32, fontWeight: 500, color: '#333333', align: 'left', lineHeight: 1.5 },
+        'Hover over the sender name to reveal the real email domain before you click anything.',
+        rect(w * 0.08, h * 0.4, w * 0.84, h * 0.26),
+        { fontFamily: 'Inter', fontSize: 32, fontWeight: 500, align: 'left', lineHeight: 1.5, color: CYBER_PALETTE.text },
+      ),
+      createTextElement(
+        'cta',
+        '●●●●●○○○○○',
+        rect(w * 0.08, h * 0.9, w * 0.6, h * 0.05),
+        { fontFamily: 'monospace', fontSize: 22, fontWeight: 400, color: CYBER_PALETTE.safe, align: 'left' },
+        false,
       ),
     ] as SlideElement[],
   }
 }
 
-function minimal(size: CanvasSize) {
+function mythVsFact(size: CanvasSize) {
   const { width: w, height: h } = size
   return {
-    background: defaultBackground({ type: 'solid', color: '#FFFFFF' }),
+    background: defaultBackground({ type: 'solid', color: CYBER_PALETTE.bg }),
     elements: [
       createTextElement(
         'headline',
-        'Minimal.',
-        rect(w * 0.1, h * 0.42, w * 0.8, h * 0.16),
-        { fontFamily: 'Poppins', fontSize: 72, fontWeight: 800, color: '#111111', align: 'center' },
+        'Myth vs Fact',
+        rect(w * 0.08, h * 0.06, w * 0.84, h * 0.1),
+        { fontSize: 48, fontWeight: 700, align: 'center', color: CYBER_PALETTE.text },
+      ),
+      createIconElement('x-circle', rect(w * 0.12, h * 0.22, w * 0.14, w * 0.14), CYBER_PALETTE.alert),
+      createTextElement('subheadline', 'MYTH', rect(w * 0.08, h * 0.38, w * 0.36, h * 0.05), {
+        fontFamily: 'Inter',
+        fontSize: 26,
+        fontWeight: 800,
+        color: CYBER_PALETTE.alert,
+        align: 'center',
+      }),
+      createTextElement(
+        'body',
+        'Incognito mode makes you anonymous online.',
+        rect(w * 0.06, h * 0.44, w * 0.4, h * 0.22),
+        { fontFamily: 'Inter', fontSize: 26, fontWeight: 500, align: 'center', color: CYBER_PALETTE.text, lineHeight: 1.4 },
+      ),
+      createIconElement('checkmark', rect(w * 0.74, h * 0.22, w * 0.14, w * 0.14), CYBER_PALETTE.safe),
+      createTextElement('subheadline', 'FACT', rect(w * 0.56, h * 0.38, w * 0.36, h * 0.05), {
+        fontFamily: 'Inter',
+        fontSize: 26,
+        fontWeight: 800,
+        color: CYBER_PALETTE.safe,
+        align: 'center',
+      }),
+      createTextElement(
+        'body',
+        'It only hides your history from this device — your ISP and sites still see you.',
+        rect(w * 0.54, h * 0.44, w * 0.4, h * 0.28),
+        { fontFamily: 'Inter', fontSize: 26, fontWeight: 500, align: 'center', color: CYBER_PALETTE.text, lineHeight: 1.4 },
       ),
     ] as SlideElement[],
   }
 }
 
-function imageHeavy(size: CanvasSize) {
+function checklist(size: CanvasSize) {
   const { width: w, height: h } = size
   return {
-    background: defaultBackground({ type: 'solid', color: '#000000', overlayColor: '#000000', overlayOpacity: 0.25 }),
+    background: defaultBackground({ type: 'solid', color: CYBER_PALETTE.card }),
     elements: [
-      createImageElement(rect(0, 0, w, h), { fit: 'cover' }),
       createTextElement(
         'headline',
-        'Image-Led Caption',
-        rect(w * 0.08, h * 0.76, w * 0.84, h * 0.14),
-        { fontFamily: 'Poppins', fontSize: 48, fontWeight: 800, color: '#FFFFFF', align: 'left' },
+        'Before you travel: security checklist',
+        rect(w * 0.08, h * 0.08, w * 0.84, h * 0.16),
+        { fontSize: 46, fontWeight: 700, align: 'left', color: CYBER_PALETTE.text },
       ),
+      createTextElement(
+        'body',
+        '- Update your OS and apps\n- Enable find-my-device\n- Turn on a VPN for public wifi\n- Back up your data',
+        rect(w * 0.08, h * 0.32, w * 0.84, h * 0.5),
+        { fontFamily: 'Inter', fontSize: 32, fontWeight: 500, align: 'left', lineHeight: 1.7, color: CYBER_PALETTE.text },
+      ),
+    ] as SlideElement[],
+  }
+}
+
+function newsAlert(size: CanvasSize) {
+  const { width: w, height: h } = size
+  return {
+    background: defaultBackground({ type: 'solid', color: CYBER_PALETTE.bg }),
+    elements: [
+      createTextElement('slideNumber', 'BREAKING', rect(w * 0.08, h * 0.08, w * 0.45, h * 0.07), {
+        fontFamily: 'Inter',
+        fontSize: 28,
+        fontWeight: 800,
+        color: CYBER_PALETTE.bg,
+        align: 'center',
+        backgroundColor: CYBER_PALETTE.alert,
+        backgroundOpacity: 1,
+        padding: 12,
+        borderRadius: 6,
+      }),
+      createTextElement(
+        'headline',
+        'Major password manager confirms data breach',
+        rect(w * 0.08, h * 0.24, w * 0.84, h * 0.3),
+        { fontSize: 56, fontWeight: 700, align: 'left', color: CYBER_PALETTE.text, lineHeight: 1.1 },
+      ),
+      createTextElement('subheadline', 'Reuters', rect(w * 0.08, h * 0.86, w * 0.5, h * 0.05), {
+        fontFamily: 'Inter',
+        fontSize: 24,
+        fontWeight: 700,
+        color: CYBER_PALETTE.muted,
+        align: 'left',
+      }),
+      createTextElement('cta', 'Sept 2026', rect(w * 0.58, h * 0.86, w * 0.34, h * 0.05), {
+        fontFamily: 'Inter',
+        fontSize: 24,
+        fontWeight: 500,
+        color: CYBER_PALETTE.muted,
+        align: 'right',
+      }),
+    ] as SlideElement[],
+  }
+}
+
+function defenderTakeaway(size: CanvasSize) {
+  const { width: w, height: h } = size
+  return {
+    background: defaultBackground({ type: 'solid', color: CYBER_PALETTE.bg }),
+    elements: [
+      createIconElement('shield-check', rect(w * 0.5 - w * 0.09, h * 0.14, w * 0.18, w * 0.18), CYBER_PALETTE.safe),
+      createTextElement(
+        'headline',
+        'Turn on two-factor authentication today.',
+        rect(w * 0.1, h * 0.4, w * 0.8, h * 0.24),
+        { fontSize: 54, fontWeight: 700, align: 'center', color: CYBER_PALETTE.text, lineHeight: 1.2 },
+      ),
+      createTextElement('cta', 'Follow for more →', rect(w * 0.1, h * 0.86, w * 0.8, h * 0.06), {
+        fontFamily: 'Inter',
+        fontSize: 28,
+        fontWeight: 700,
+        color: CYBER_PALETTE.safe,
+        align: 'center',
+      }),
     ] as SlideElement[],
   }
 }
 
 export const TEMPLATES: SlideTemplate[] = [
-  { id: 'bold-headline', name: 'Bold Headline', description: 'Big statement with gradient backdrop', build: boldHeadline },
-  { id: 'listicle', name: 'Listicle', description: 'Numbered list on dark background', build: listicle },
-  { id: 'quote', name: 'Quote', description: 'Centered editorial quote', build: quote },
-  { id: 'before-after', name: 'Before/After', description: 'Two-image comparison layout', build: beforeAfter },
-  { id: 'tutorial-step', name: 'Tutorial Step', description: 'Numbered step with explanation', build: tutorialStep },
-  { id: 'tips-carousel', name: 'Tips Carousel', description: 'Single tip, headline + body', build: tipsCarousel },
-  { id: 'minimal', name: 'Minimal', description: 'Clean centered statement', build: minimal },
-  { id: 'image-heavy', name: 'Image-Heavy', description: 'Full-bleed image with caption', build: imageHeavy },
+  { id: 'threat-brief', name: 'Threat Brief', description: 'Dark bg, red accent, big hook headline, swipe cue', build: threatBrief },
+  { id: 'listicle', name: 'Listicle', description: 'Numbered tips on a clean cyber card background', build: listicle },
+  { id: 'before-after', name: 'Before/After', description: 'Split layout comparing a weak vs. strong practice', build: beforeAfter },
+  { id: 'stat-drop', name: 'Stat Drop', description: 'Giant number, small label, source line', build: statDrop },
+  { id: 'quote-card', name: 'Quote Card', description: 'Large quotation mark with attribution', build: quoteCard },
+  { id: 'step-by-step', name: 'Step-by-Step', description: 'STEP badge, headline, body, progress indicator', build: stepByStep },
+  { id: 'myth-vs-fact', name: 'Myth vs Fact', description: 'Two columns: red X myth vs green check fact', build: mythVsFact },
+  { id: 'checklist', name: 'Checklist', description: 'Checkbox-style items for an actionable list', build: checklist },
+  { id: 'news-alert', name: 'News Alert', description: 'BREAKING banner, headline, source and date', build: newsAlert },
+  { id: 'defender-takeaway', name: 'Defender Takeaway', description: 'Green accent, single bold action item, CTA', build: defenderTakeaway },
 ]
 
 export function getTemplate(id: string): SlideTemplate {

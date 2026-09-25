@@ -1,7 +1,10 @@
 import html2canvas from 'html2canvas'
 import JSZip from 'jszip'
-import type { BrandKit, CanvasSize, ImageElement, Slide, SlideElement, TextElement } from '../types'
+import type { BrandKit, CanvasSize, IconElement, ImageElement, Slide, SlideElement, TextElement, CaptionState } from '../types'
 import { logoPositionStyle } from './brandKit'
+import { getIcon } from './icons'
+import { parseRichText } from './richText'
+import { fitTextElement } from './autoFit'
 
 // ---------- DOM builders (used only for offscreen, true-resolution export) ----------
 
@@ -66,9 +69,76 @@ function buildBackgroundLayer(slide: Slide, size: CanvasSize): HTMLDivElement {
   return layer
 }
 
+function buildRichContentNode(content: string, baseColor: string): HTMLDivElement {
+  const wrapper = document.createElement('div')
+  wrapper.style.width = '100%'
+  const blocks = parseRichText(content)
+
+  for (const block of blocks) {
+    if (block.kind === 'paragraph') {
+      for (const runs of block.items) {
+        const p = document.createElement('div')
+        p.style.whiteSpace = 'pre-wrap'
+        p.style.overflowWrap = 'break-word'
+        for (const run of runs) {
+          const span = document.createElement('span')
+          if (run.mark === 'bold') span.style.fontWeight = '800'
+          if (run.mark === 'italic') span.style.fontStyle = 'italic'
+          if (run.mark === 'code') {
+            span.style.fontFamily = "'JetBrains Mono', monospace"
+            span.style.backgroundColor = 'rgba(255,255,255,0.12)'
+            span.style.borderRadius = '4px'
+            span.style.padding = '0 4px'
+          }
+          span.textContent = run.text
+          p.appendChild(span)
+        }
+        wrapper.appendChild(p)
+      }
+    } else {
+      const list = document.createElement('div')
+      block.items.forEach((runs, i) => {
+        const item = document.createElement('div')
+        item.style.display = 'flex'
+        item.style.gap = '0.5em'
+        item.style.paddingLeft = '0'
+
+        const marker = document.createElement('span')
+        marker.style.flexShrink = '0'
+        marker.style.color = baseColor
+        marker.textContent = block.kind === 'numbered-list' ? `${i + 1}.` : '•'
+
+        const textEl = document.createElement('span')
+        textEl.style.whiteSpace = 'pre-wrap'
+        textEl.style.overflowWrap = 'break-word'
+        for (const run of runs) {
+          const span = document.createElement('span')
+          if (run.mark === 'bold') span.style.fontWeight = '800'
+          if (run.mark === 'italic') span.style.fontStyle = 'italic'
+          if (run.mark === 'code') {
+            span.style.fontFamily = "'JetBrains Mono', monospace"
+            span.style.backgroundColor = 'rgba(255,255,255,0.12)'
+            span.style.borderRadius = '4px'
+            span.style.padding = '0 4px'
+          }
+          span.textContent = run.text
+          textEl.appendChild(span)
+        }
+        item.appendChild(marker)
+        item.appendChild(textEl)
+        list.appendChild(item)
+      })
+      wrapper.appendChild(list)
+    }
+  }
+
+  return wrapper
+}
+
 function buildTextNode(element: TextElement): HTMLDivElement {
   const el = document.createElement('div')
-  const { rect, style, content } = element
+  const { rect, style } = element
+  const fit = fitTextElement(element)
   applyStyles(el, {
     position: 'absolute',
     left: `${rect.x}px`,
@@ -77,26 +147,39 @@ function buildTextNode(element: TextElement): HTMLDivElement {
     height: `${rect.height}px`,
     transform: rect.rotation ? `rotate(${rect.rotation}deg)` : 'none',
     fontFamily: `'${style.fontFamily}', sans-serif`,
-    fontSize: `${style.fontSize}px`,
+    fontSize: `${fit.fontSize}px`,
     fontWeight: String(style.fontWeight),
     color: style.color,
     textAlign: style.align,
-    lineHeight: String(style.lineHeight),
+    lineHeight: String(fit.lineHeight),
     letterSpacing: `${style.letterSpacing}px`,
     padding: `${style.padding}px`,
     borderRadius: `${style.borderRadius}px`,
     backgroundColor:
       style.backgroundOpacity > 0 ? hexToRgba(style.backgroundColor, style.backgroundOpacity) : 'transparent',
-    whiteSpace: 'pre-wrap',
-    overflowWrap: 'break-word',
+    overflow: 'hidden',
     display: 'flex',
     alignItems: style.align === 'center' ? 'center' : 'flex-start',
     justifyContent: style.align === 'center' ? 'center' : style.align === 'right' ? 'flex-end' : 'flex-start',
   })
-  const span = document.createElement('div')
-  span.style.width = '100%'
-  span.textContent = content
-  el.appendChild(span)
+  el.appendChild(buildRichContentNode(element.content, style.color))
+  return el
+}
+
+function buildIconNode(element: IconElement): HTMLDivElement {
+  const el = document.createElement('div')
+  const { rect } = element
+  const def = getIcon(element.iconId)
+  applyStyles(el, {
+    position: 'absolute',
+    left: `${rect.x}px`,
+    top: `${rect.y}px`,
+    width: `${rect.width}px`,
+    height: `${rect.height}px`,
+    transform: rect.rotation ? `rotate(${rect.rotation}deg)` : 'none',
+    color: element.color,
+  })
+  el.innerHTML = `<svg viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${def.svg}</svg>`
   return el
 }
 
@@ -130,7 +213,9 @@ function buildImageNode(element: ImageElement): HTMLDivElement {
 }
 
 function buildElementNode(element: SlideElement): HTMLDivElement {
-  return element.kind === 'text' ? buildTextNode(element) : buildImageNode(element)
+  if (element.kind === 'text') return buildTextNode(element)
+  if (element.kind === 'icon') return buildIconNode(element)
+  return buildImageNode(element)
 }
 
 function buildLogoNode(brandKit: BrandKit): HTMLImageElement | null {
@@ -262,12 +347,40 @@ export async function exportSingleSlide(
   downloadBlob(blob, slideFileName(index))
 }
 
+export function buildCaptionText(caption: CaptionState): string {
+  const parts = [caption.hook, caption.body, caption.cta].filter((p) => p.trim().length > 0)
+  const hashtagLine = caption.hashtags.length > 0 ? `\n\n${caption.hashtags.join(' ')}` : ''
+  return `${parts.join('\n\n')}${hashtagLine}`
+}
+
+export function buildReadmeText(suggestedAudio: string, slideCount: number): string {
+  return [
+    'Instagram Carousel — export notes',
+    '==================================',
+    '',
+    `Slides: ${slideCount}`,
+    `Suggested audio track: ${suggestedAudio || 'Not set'}`,
+    '',
+    'Add this audio track (or something in the same category) when you post',
+    'the carousel as a Reel/cover, or set it as background audio if your',
+    'posting flow supports it.',
+    '',
+    'caption.txt in this ZIP contains the ready-to-paste caption + hashtags.',
+  ].join('\n')
+}
+
+export interface ZipExportExtras {
+  caption?: CaptionState
+  suggestedAudio?: string
+}
+
 export async function exportAllSlidesZip(
   slides: Slide[],
   size: CanvasSize,
   brandKit: BrandKit,
   scale = 2,
   onProgress?: (done: number, total: number) => void,
+  extras?: ZipExportExtras,
 ): Promise<void> {
   const zip = new JSZip()
   for (let i = 0; i < slides.length; i++) {
@@ -275,6 +388,12 @@ export async function exportAllSlidesZip(
     const blob = await canvasToBlob(canvas)
     zip.file(slideFileName(i), blob)
     onProgress?.(i + 1, slides.length)
+  }
+  if (extras?.caption) {
+    zip.file('caption.txt', buildCaptionText(extras.caption))
+  }
+  if (extras?.suggestedAudio !== undefined) {
+    zip.file('readme.txt', buildReadmeText(extras.suggestedAudio, slides.length))
   }
   const zipBlob = await zip.generateAsync({ type: 'blob' })
   downloadBlob(zipBlob, 'carousel-slides.zip')

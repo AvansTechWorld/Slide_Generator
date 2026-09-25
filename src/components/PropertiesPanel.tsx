@@ -1,8 +1,39 @@
+import { useEffect } from 'react'
 import type { ChangeEvent, ReactNode } from 'react'
 import { useActiveSlide, useEditorStore, useSelectedElement } from '../store/useEditorStore'
 import type { BackgroundFit, FontWeight, LogoPosition, TextAlign } from '../types'
 import { FONT_OPTIONS, MAX_BRAND_COLORS, MAX_BRAND_FONTS, MAX_SLIDES } from '../types'
 import { LOGO_POSITION_OPTIONS } from '../lib/brandKit'
+import { ICONS } from '../lib/icons'
+import { computeAutoFit } from '../lib/autoFit'
+import type { TextElement } from '../types'
+
+function getOverflowFlag(element: TextElement): boolean {
+  if (!element.autoFit) return false
+  const fit = computeAutoFit(
+    element.content,
+    element.style.fontFamily,
+    element.style.fontSize,
+    element.style.lineHeight,
+    element.style.fontWeight,
+    element.style.padding,
+    element.rect.width,
+    element.rect.height,
+  )
+  return fit.overflowing
+}
+
+function ApplyToAllButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="mt-1 self-start rounded-md border border-dashed border-neutral-300 px-2 py-1 text-[11px] font-semibold text-neutral-500 hover:border-accent hover:text-accent dark:border-neutral-700"
+    >
+      Apply to all slides
+    </button>
+  )
+}
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -156,8 +187,11 @@ function ElementProperties() {
   const element = useSelectedElement()
   const updateTextContent = useEditorStore((s) => s.updateTextContent)
   const updateTextStyle = useEditorStore((s) => s.updateTextStyle)
+  const updateTextAutoFit = useEditorStore((s) => s.updateTextAutoFit)
   const updateImageProps = useEditorStore((s) => s.updateImageProps)
+  const updateIconProps = useEditorStore((s) => s.updateIconProps)
   const deleteElement = useEditorStore((s) => s.deleteElement)
+  const applyToAllSlides = useEditorStore((s) => s.applyToAllSlides)
 
   if (!slide || !element) return null
 
@@ -171,6 +205,44 @@ function ElementProperties() {
     { value: '900', label: 'Black' },
   ]
 
+  if (element.kind === 'icon') {
+    return (
+      <Section title="Icon">
+        <Field label="Recolor">
+          <ColorInput value={element.color} onChange={(v) => updateIconProps(slide.id, element.id, { color: v })} />
+        </Field>
+        <ApplyToAllButton onClick={() => applyToAllSlides('accentColor', element.color)} />
+        <Field label="Swap icon">
+          <div className="grid grid-cols-6 gap-1.5 rounded-md border border-neutral-200 p-2 dark:border-neutral-700">
+            {ICONS.map((icon) => (
+              <button
+                key={icon.id}
+                type="button"
+                title={icon.label}
+                onClick={() => updateIconProps(slide.id, element.id, { iconId: icon.id })}
+                className={`flex h-8 w-8 items-center justify-center rounded-md border transition ${
+                  element.iconId === icon.id
+                    ? 'border-accent bg-accent/10 text-accent'
+                    : 'border-transparent text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                }`}
+                dangerouslySetInnerHTML={{
+                  __html: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8">${icon.svg}</svg>`,
+                }}
+              />
+            ))}
+          </div>
+        </Field>
+        <button
+          type="button"
+          onClick={() => deleteElement(slide.id, element.id)}
+          className="mt-1 rounded-md border border-red-200 px-2 py-1.5 text-xs font-semibold text-red-500 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
+        >
+          Delete element
+        </button>
+      </Section>
+    )
+  }
+
   return (
     <Section title={element.kind === 'text' ? `Text — ${element.role}` : 'Image'}>
       {element.kind === 'text' ? (
@@ -179,10 +251,22 @@ function ElementProperties() {
             <textarea
               value={element.content}
               onChange={(e) => updateTextContent(slide.id, element.id, e.target.value)}
-              rows={3}
+              rows={4}
+              placeholder={'Supports **bold**, *italic*, `code`, - bullets, 1. numbers'}
               className="resize-none rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-800"
             />
           </Field>
+          <label className="flex items-center gap-2 text-xs font-medium text-neutral-600 dark:text-neutral-300">
+            <input
+              type="checkbox"
+              checked={element.autoFit}
+              onChange={(e) => updateTextAutoFit(slide.id, element.id, e.target.checked)}
+            />
+            Auto-fit text to box
+            {getOverflowFlag(element) && (
+              <span className="text-[11px] font-semibold text-red-500">— still overflowing, shorten text</span>
+            )}
+          </label>
           <Field label="Font family">
             <Select
               value={element.style.fontFamily}
@@ -190,6 +274,7 @@ function ElementProperties() {
               options={fontOptions}
             />
           </Field>
+          <ApplyToAllButton onClick={() => applyToAllSlides('font', element.style.fontFamily)} />
           <div className="grid grid-cols-2 gap-2">
             <Field label="Size">
               <NumberInput
@@ -210,6 +295,9 @@ function ElementProperties() {
           <Field label="Color">
             <ColorInput value={element.style.color} onChange={(v) => updateTextStyle(slide.id, element.id, { color: v })} />
           </Field>
+          {(element.role === 'cta' || element.role === 'slideNumber') && (
+            <ApplyToAllButton onClick={() => applyToAllSlides('accentColor', element.style.color)} />
+          )}
           <Field label="Alignment">
             <AlignRow value={element.style.align} onChange={(v) => updateTextStyle(slide.id, element.id, { align: v })} />
           </Field>
@@ -326,6 +414,7 @@ function ElementProperties() {
 function BackgroundProperties() {
   const slide = useActiveSlide()
   const updateBackground = useEditorStore((s) => s.updateBackground)
+  const applyToAllSlides = useEditorStore((s) => s.applyToAllSlides)
   if (!slide) return null
   const bg = slide.background
 
@@ -342,6 +431,7 @@ function BackgroundProperties() {
           ]}
         />
       </Field>
+      <ApplyToAllButton onClick={() => applyToAllSlides('backgroundType', bg.type)} />
 
       {bg.type === 'solid' && (
         <Field label="Color">
@@ -432,6 +522,7 @@ function BrandKitProperties() {
   const setLogo = useEditorStore((s) => s.setLogo)
   const setLogoPosition = useEditorStore((s) => s.setLogoPosition)
   const setLogoSize = useEditorStore((s) => s.setLogoSize)
+  const applyToAllSlides = useEditorStore((s) => s.applyToAllSlides)
 
   const fontOptions = FONT_OPTIONS.map((f) => ({ value: f, label: f }))
 
@@ -495,6 +586,7 @@ function BrandKitProperties() {
               options={LOGO_POSITION_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
             />
           </Field>
+          <ApplyToAllButton onClick={() => applyToAllSlides('logoPosition', brandKit.logoPosition)} />
           <Field label="Logo size">
             <RangeInput value={brandKit.logoSize} min={24} max={200} onChange={setLogoSize} />
           </Field>
@@ -511,6 +603,29 @@ function BrandKitProperties() {
   )
 }
 
+function Toast() {
+  const lastToast = useEditorStore((s) => s.lastToast)
+  const clearToast = useEditorStore((s) => s.clearToast)
+
+  useEffectToast(lastToast, clearToast)
+
+  if (!lastToast) return null
+
+  return (
+    <div className="toast-pop fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-full bg-neutral-900 px-4 py-2 text-xs font-semibold text-white shadow-panel dark:bg-cyber-panel">
+      {lastToast}
+    </div>
+  )
+}
+
+function useEffectToast(lastToast: string | null, clearToast: () => void) {
+  useEffect(() => {
+    if (!lastToast) return
+    const id = window.setTimeout(clearToast, 2200)
+    return () => window.clearTimeout(id)
+  }, [lastToast, clearToast])
+}
+
 export default function PropertiesPanel() {
   const slides = useEditorStore((s) => s.slides)
 
@@ -522,6 +637,7 @@ export default function PropertiesPanel() {
       <div className="px-4 py-3 text-[11px] text-neutral-400">
         {slides.length}/{MAX_SLIDES} slides used
       </div>
+      <Toast />
     </aside>
   )
 }

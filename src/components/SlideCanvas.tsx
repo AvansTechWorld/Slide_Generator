@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
-import type { ImageElement, SlideBackground, SlideElement, TextElement } from '../types'
+import TextareaAutosize from 'react-textarea-autosize'
+import type { IconElement, RichBlock, SlideBackground, SlideElement, TextElement } from '../types'
 import { ASPECT_RATIOS } from '../types'
 import { useActiveSlide, useEditorStore } from '../store/useEditorStore'
 import { logoPositionStyle } from '../lib/brandKit'
+import { getIcon } from '../lib/icons'
+import { parseRichText, toggleInlineMark, toggleListPrefix } from '../lib/richText'
+import { computeAutoFit } from '../lib/autoFit'
+import RichTextToolbar from './RichTextToolbar'
 
 type ResizeHandle = 'nw' | 'ne' | 'sw' | 'se'
 
@@ -40,21 +45,108 @@ export function backgroundStyle(bg: SlideBackground): CSSProperties {
   }
 }
 
-export function textNodeStyle(el: TextElement): CSSProperties {
+/** Renders parsed rich-text blocks (paragraphs / bullet / numbered lists) as JSX. */
+export function RichContent({ blocks, accentColor }: { blocks: RichBlock[]; accentColor: string }) {
+  return (
+    <div style={{ width: '100%' }}>
+      {blocks.map((block, bi) =>
+        block.kind === 'paragraph' ? (
+          block.items.map((runs, ri) => (
+            <div key={`${bi}-${ri}`} style={{ whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>
+              {runs.map((run, i) => (
+                <span
+                  key={i}
+                  style={{
+                    fontWeight: run.mark === 'bold' ? 800 : undefined,
+                    fontStyle: run.mark === 'italic' ? 'italic' : undefined,
+                    fontFamily: run.mark === 'code' ? "'JetBrains Mono', monospace" : undefined,
+                    backgroundColor: run.mark === 'code' ? 'rgba(255,255,255,0.12)' : undefined,
+                    borderRadius: run.mark === 'code' ? 4 : undefined,
+                    padding: run.mark === 'code' ? '0 4px' : undefined,
+                  }}
+                >
+                  {run.text}
+                </span>
+              ))}
+            </div>
+          ))
+        ) : (
+          <div key={bi}>
+            {block.items.map((runs, ri) => (
+              <div key={ri} style={{ display: 'flex', gap: '0.5em' }}>
+                <span style={{ flexShrink: 0, color: accentColor }}>
+                  {block.kind === 'numbered-list' ? `${ri + 1}.` : '•'}
+                </span>
+                <span style={{ whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>
+                  {runs.map((run, i) => (
+                    <span
+                      key={i}
+                      style={{
+                        fontWeight: run.mark === 'bold' ? 800 : undefined,
+                        fontStyle: run.mark === 'italic' ? 'italic' : undefined,
+                        fontFamily: run.mark === 'code' ? "'JetBrains Mono', monospace" : undefined,
+                        backgroundColor: run.mark === 'code' ? 'rgba(255,255,255,0.12)' : undefined,
+                        borderRadius: run.mark === 'code' ? 4 : undefined,
+                        padding: run.mark === 'code' ? '0 4px' : undefined,
+                      }}
+                    >
+                      {run.text}
+                    </span>
+                  ))}
+                </span>
+              </div>
+            ))}
+          </div>
+        ),
+      )}
+    </div>
+  )
+}
+
+/** Auto-fit hook: recomputes fitted font-size/line-height when inputs change. */
+function useAutoFit(el: TextElement) {
+  return useMemo(
+    () =>
+      el.autoFit
+        ? computeAutoFit(
+            el.content,
+            el.style.fontFamily,
+            el.style.fontSize,
+            el.style.lineHeight,
+            el.style.fontWeight,
+            el.style.padding,
+            el.rect.width,
+            el.rect.height,
+          )
+        : { fontSize: el.style.fontSize, lineHeight: el.style.lineHeight, overflowing: false },
+    [
+      el.autoFit,
+      el.content,
+      el.style.fontFamily,
+      el.style.fontSize,
+      el.style.lineHeight,
+      el.style.fontWeight,
+      el.style.padding,
+      el.rect.width,
+      el.rect.height,
+    ],
+  )
+}
+
+export function textNodeStyle(el: TextElement, fontSize = el.style.fontSize, lineHeight = el.style.lineHeight): CSSProperties {
   const { style } = el
   return {
     fontFamily: `'${style.fontFamily}', sans-serif`,
-    fontSize: style.fontSize,
+    fontSize,
     fontWeight: style.fontWeight,
     color: style.color,
     textAlign: style.align,
-    lineHeight: style.lineHeight,
+    lineHeight,
     letterSpacing: style.letterSpacing,
     padding: style.padding,
     borderRadius: style.borderRadius,
     backgroundColor: style.backgroundOpacity > 0 ? hexToRgba(style.backgroundColor, style.backgroundOpacity) : 'transparent',
-    whiteSpace: 'pre-wrap',
-    overflowWrap: 'break-word',
+    overflow: 'hidden',
     width: '100%',
     height: '100%',
     display: 'flex',
@@ -62,6 +154,31 @@ export function textNodeStyle(el: TextElement): CSSProperties {
     justifyContent: style.align === 'center' ? 'center' : style.align === 'right' ? 'flex-end' : 'flex-start',
     outline: 'none',
   }
+}
+
+function TextBlock({ el, editing }: { el: TextElement; editing: boolean }) {
+  const fit = useAutoFit(el)
+  const blocks = useMemo(() => parseRichText(el.content), [el.content])
+  return (
+    <div
+      style={textNodeStyle(el, fit.fontSize, fit.lineHeight)}
+      className={fit.overflowing && !editing ? 'element-overflow-warning' : ''}
+    >
+      <RichContent blocks={blocks} accentColor={el.style.color} />
+    </div>
+  )
+}
+
+function IconBlock({ el }: { el: IconElement }) {
+  const def = getIcon(el.iconId)
+  return (
+    <div
+      style={{ width: '100%', height: '100%', color: el.color }}
+      dangerouslySetInnerHTML={{
+        __html: `<svg viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${def.svg}</svg>`,
+      }}
+    />
+  )
 }
 
 export default function SlideCanvas() {
@@ -180,15 +297,34 @@ export default function SlideCanvas() {
   }
 
   const [editingId, setEditingId] = useState<string | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [selection, setSelection] = useState<{ start: number; end: number } | null>(null)
+  const [toolbarPos, setToolbarPos] = useState<{ x: number; y: number } | null>(null)
 
   const logoStyle = useMemo(() => logoPositionStyle(brandKit.logoPosition, brandKit.logoSize), [brandKit])
 
+  const editingElement = useMemo(
+    () => (slide && editingId ? (slide.elements.find((e) => e.id === editingId) as TextElement | undefined) : undefined),
+    [slide, editingId],
+  )
+
+  const syncSelectionAndToolbar = useCallback(() => {
+    const ta = textareaRef.current
+    if (!ta) return
+    const start = ta.selectionStart
+    const end = ta.selectionEnd
+    if (start === end) {
+      setSelection(null)
+      setToolbarPos(null)
+      return
+    }
+    setSelection({ start, end })
+    const rect = ta.getBoundingClientRect()
+    setToolbarPos({ x: rect.left + rect.width / 2, y: rect.top - 44 })
+  }, [])
+
   if (!slide) {
-    return (
-      <div className="flex flex-1 items-center justify-center text-neutral-400">
-        No slide selected
-      </div>
-    )
+    return <div className="flex flex-1 items-center justify-center text-neutral-400">No slide selected</div>
   }
 
   return (
@@ -197,6 +333,24 @@ export default function SlideCanvas() {
       className="relative flex flex-1 items-center justify-center overflow-hidden bg-neutral-200 dark:bg-neutral-900"
       onPointerDown={() => selectElement(null)}
     >
+      {editingElement && selection && toolbarPos && (
+        <RichTextToolbar
+          position={toolbarPos}
+          onFormat={(action) => {
+            const ta = textareaRef.current
+            if (!ta || !slide) return
+            const { start, end } = selection
+            let nextContent = editingElement.content
+            if (action === 'bullet-list' || action === 'numbered-list') {
+              nextContent = toggleListPrefix(editingElement.content, start, end, action)
+            } else {
+              nextContent = toggleInlineMark(editingElement.content, start, end, action)
+            }
+            updateTextContent(slide.id, editingElement.id, nextContent)
+            requestAnimationFrame(() => ta.focus())
+          }}
+        />
+      )}
       <div
         className="relative shadow-panel"
         style={{
@@ -240,22 +394,35 @@ export default function SlideCanvas() {
             >
               {el.kind === 'text' ? (
                 editingId === el.id ? (
-                  <div
-                    contentEditable
-                    suppressContentEditableWarning
+                  <TextareaAutosize
+                    ref={textareaRef}
+                    value={el.content}
                     autoFocus
-                    style={textNodeStyle(el)}
                     onPointerDown={(e) => e.stopPropagation()}
-                    onBlur={(e) => {
-                      updateTextContent(slide.id, el.id, e.currentTarget.textContent ?? '')
-                      setEditingId(null)
+                    onChange={(e) => updateTextContent(slide.id, el.id, e.target.value)}
+                    onSelect={syncSelectionAndToolbar}
+                    onKeyUp={syncSelectionAndToolbar}
+                    onBlur={() => {
+                      window.setTimeout(() => {
+                        setEditingId(null)
+                        setSelection(null)
+                        setToolbarPos(null)
+                      }, 150)
                     }}
-                  >
-                    {el.content}
-                  </div>
+                    style={{
+                      ...textNodeStyle(el),
+                      width: '100%',
+                      height: undefined,
+                      resize: 'none',
+                      border: 'none',
+                      background: 'transparent',
+                    }}
+                  />
                 ) : (
-                  <div style={textNodeStyle(el)}>{el.content}</div>
+                  <TextBlock el={el} editing={false} />
                 )
+              ) : el.kind === 'icon' ? (
+                <IconBlock el={el} />
               ) : (
                 <ImageBlock el={el} />
               )}
@@ -303,12 +470,9 @@ export default function SlideCanvas() {
   )
 }
 
-function ImageBlock({ el }: { el: ImageElement }) {
+function ImageBlock({ el }: { el: import('../types').ImageElement }) {
   return (
-    <div
-      className="h-full w-full overflow-hidden checkerboard"
-      style={{ borderRadius: el.borderRadius }}
-    >
+    <div className="h-full w-full overflow-hidden checkerboard" style={{ borderRadius: el.borderRadius }}>
       {el.src ? (
         <img
           src={el.src}

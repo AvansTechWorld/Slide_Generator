@@ -1,6 +1,56 @@
+import type { SlideTag } from '../types'
+
 export interface ParsedSlide {
   headline: string
   body: string
+  tag: SlideTag
+}
+
+const STAT_PATTERN = /\d+(\.\d+)?%/
+const ALL_CAPS_SHORT = /^[A-Z0-9][A-Z0-9 !?.'"-]{1,39}$/
+
+/**
+ * Smart Content Importer v2: tags a parsed slide based on simple,
+ * deterministic signals in its headline/body.
+ *   - headline ends with "?"            -> Question/Hook
+ *   - body starts with "- " or "• "     -> List
+ *   - headline has a number + "%"       -> Stat
+ *   - headline is short + ALL CAPS      -> Cover/Hook
+ */
+export function detectSlideTag(headline: string, body: string): SlideTag {
+  const trimmedHeadline = headline.trim()
+  if (trimmedHeadline.endsWith('?')) return 'question-hook'
+  if (STAT_PATTERN.test(trimmedHeadline)) return 'stat'
+  if (trimmedHeadline.length <= 40 && trimmedHeadline === trimmedHeadline.toUpperCase() && ALL_CAPS_SHORT.test(trimmedHeadline)) {
+    return 'cover-hook'
+  }
+  const firstBodyLine = body.split('\n')[0]?.trimStart() ?? ''
+  if (firstBodyLine.startsWith('- ') || firstBodyLine.startsWith('• ')) return 'list'
+  return 'none'
+}
+
+/** Best-matching cyber template id for a detected tag. */
+export function templateIdForTag(tag: SlideTag): string {
+  switch (tag) {
+    case 'question-hook':
+      return 'threat-brief'
+    case 'list':
+      return 'listicle'
+    case 'stat':
+      return 'stat-drop'
+    case 'cover-hook':
+      return 'threat-brief'
+    default:
+      return 'defender-takeaway'
+  }
+}
+
+export const SLIDE_TAG_LABELS: Record<SlideTag, string> = {
+  'question-hook': 'Question/Hook',
+  list: 'List',
+  stat: 'Stat',
+  'cover-hook': 'Cover/Hook',
+  none: '',
 }
 
 const HEADING_PREFIX = /^#{1,3}\s+/
@@ -30,7 +80,7 @@ function parseBlock(block: string): ParsedSlide | null {
 
   if (!headline) return null
 
-  return { headline, body }
+  return { headline, body, tag: detectSlideTag(headline, body) }
 }
 
 /**

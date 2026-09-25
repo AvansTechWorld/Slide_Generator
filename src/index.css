@@ -54,3 +54,61 @@
   outline: 1px dashed rgba(59, 130, 246, 0.6);
   outline-offset: 2px;
 }
+
+.element-overflow-warning {
+  outline: 2px solid #ff4d4d !important;
+  outline-offset: 2px;
+  box-shadow: 0 0 12px rgba(255, 77, 77, 0.5);
+}
+
+.floating-toolbar {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 10px;
+  background: #1a1f2e;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.floating-toolbar button {
+  color: #f5f5f5;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.floating-toolbar button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.tag-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.toast-pop {
+  animation: toast-in 0.18s ease-out;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

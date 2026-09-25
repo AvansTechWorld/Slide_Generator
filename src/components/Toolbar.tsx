@@ -4,6 +4,9 @@ import type { AspectRatioKey } from '../types'
 import ExportButton from './ExportButton'
 import TemplatePicker from './TemplatePicker'
 import ContentImporter from './ContentImporter'
+import IconLibraryPanel from './IconLibraryPanel'
+import CaptionBuilder from './CaptionBuilder'
+import KeyboardShortcutsModal from './KeyboardShortcutsModal'
 
 const ASPECT_OPTIONS: { key: AspectRatioKey; label: string }[] = [
   { key: '4:5', label: '4:5' },
@@ -28,6 +31,9 @@ export default function Toolbar() {
 
   const [showTemplates, setShowTemplates] = useState(false)
   const [showImporter, setShowImporter] = useState(false)
+  const [showIcons, setShowIcons] = useState(false)
+  const [showCaption, setShowCaption] = useState(false)
+  const [showShortcuts, setShowShortcuts] = useState(false)
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-neutral-200 bg-white px-4 dark:border-neutral-800 dark:bg-neutral-950">
@@ -97,12 +103,35 @@ export default function Toolbar() {
         >
           + Image
         </button>
+        <button
+          type="button"
+          onClick={() => setShowIcons(true)}
+          className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+        >
+          + Icon
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowCaption(true)}
+          className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+        >
+          Caption
+        </button>
       </div>
 
       <div className="flex items-center gap-2">
         <span className="mr-1 text-xs text-neutral-400 transition-opacity">
           {isSaved ? 'Saved' : 'Saving…'}
         </span>
+
+        <button
+          type="button"
+          onClick={() => setShowShortcuts(true)}
+          title="Keyboard shortcuts (?)"
+          className="rounded-md px-2 py-1.5 text-sm text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+        >
+          ⌨
+        </button>
 
         <button
           type="button"
@@ -137,6 +166,9 @@ export default function Toolbar() {
 
       {showTemplates && <TemplatePicker onClose={() => setShowTemplates(false)} />}
       {showImporter && <ContentImporter onClose={() => setShowImporter(false)} />}
+      {showIcons && <IconLibraryPanel onClose={() => setShowIcons(false)} />}
+      {showCaption && <CaptionBuilder onClose={() => setShowCaption(false)} />}
+      {showShortcuts && <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />}
     </header>
   )
 }

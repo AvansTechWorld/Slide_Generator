@@ -1,19 +1,28 @@
 import { useCallback, useMemo, useState } from 'react'
+import type { ChangeEvent, DragEvent } from 'react'
 import { useEditorStore } from '../store/useEditorStore'
-import { parseContent, parseFile, type ParsedSlide } from '../lib/parseContent'
+import { parseContent, parseFile, SLIDE_TAG_LABELS, templateIdForTag, type ParsedSlide } from '../lib/parseContent'
 import { TEMPLATES } from '../lib/templates'
 import { MAX_SLIDES } from '../types'
+import type { ImportBlock } from '../store/useEditorStore'
 
 interface ContentImporterProps {
   onClose: () => void
+}
+
+const TAG_BADGE_STYLE: Record<string, string> = {
+  'question-hook': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400',
+  list: 'bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-400',
+  stat: 'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-400',
+  'cover-hook': 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400',
 }
 
 export default function ContentImporter({ onClose }: ContentImporterProps) {
   const importSlides = useEditorStore((s) => s.importSlides)
 
   const [rawText, setRawText] = useState('')
-  const [templateId, setTemplateId] = useState(TEMPLATES[0].id)
   const [parsed, setParsed] = useState<ParsedSlide[]>([])
+  const [templateOverrides, setTemplateOverrides] = useState<Record<number, string>>({})
   const [error, setError] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [fileName, setFileName] = useState<string | null>(null)
@@ -25,6 +34,7 @@ export default function ContentImporter({ onClose }: ContentImporterProps) {
 
   const runParse = useCallback((text: string) => {
     setError(null)
+    setTemplateOverrides({})
     if (!text.trim()) {
       setParsed([])
       return
@@ -46,6 +56,7 @@ export default function ContentImporter({ onClose }: ContentImporterProps) {
   const handleFile = async (file: File) => {
     setFileName(file.name)
     setError(null)
+    setTemplateOverrides({})
     try {
       const text = await file.text()
       setRawText(text)
@@ -56,22 +67,30 @@ export default function ContentImporter({ onClose }: ContentImporterProps) {
     }
   }
 
-  const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
+  const onDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     setIsDragging(false)
     const file = e.dataTransfer.files?.[0]
     if (file) void handleFile(file)
   }
 
-  const onChooseFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onChooseFile = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) void handleFile(file)
     e.target.value = ''
   }
 
+  const templateFor = (index: number, tag: ParsedSlide['tag']) => templateOverrides[index] ?? templateIdForTag(tag)
+
   const commit = (mode: 'replace' | 'append') => {
     if (preview.length === 0) return
-    importSlides(preview, templateId, mode)
+    const blocks: ImportBlock[] = preview.map((slide, i) => ({
+      headline: slide.headline,
+      body: slide.body,
+      tag: slide.tag,
+      templateId: templateFor(i, slide.tag),
+    }))
+    importSlides(blocks, mode)
     onClose()
   }
 
@@ -122,20 +141,10 @@ export default function ContentImporter({ onClose }: ContentImporterProps) {
             />
           </div>
 
-          <div className="mt-4">
-            <label className="mb-1 block text-xs font-semibold text-neutral-500">Template to apply</label>
-            <select
-              value={templateId}
-              onChange={(e) => setTemplateId(e.target.value)}
-              className="w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm outline-none focus:border-accent dark:border-neutral-700 dark:bg-neutral-950"
-            >
-              {TEMPLATES.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          <p className="mt-3 text-[11px] text-neutral-400">
+            Smart Content Importer v2 auto-tags each slide (Question/Hook, List, Stat, Cover/Hook) and picks a
+            matching cybersecurity template — override any slide's template below.
+          </p>
 
           {error && (
             <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-400">
@@ -160,18 +169,36 @@ export default function ContentImporter({ onClose }: ContentImporterProps) {
               <p className="mb-2 text-xs font-semibold text-neutral-500">
                 Preview — {preview.length} slide{preview.length === 1 ? '' : 's'}
               </p>
-              <ul className="max-h-48 space-y-2 overflow-y-auto pr-1">
+              <ul className="max-h-64 space-y-2 overflow-y-auto pr-1">
                 {preview.map((slide, i) => (
                   <li
                     key={i}
                     className="rounded-lg border border-neutral-200 px-3 py-2 text-xs dark:border-neutral-800"
                   >
-                    <p className="font-semibold text-neutral-800 dark:text-neutral-100">
-                      {i + 1}. {slide.headline}
-                    </p>
-                    {slide.body && (
-                      <p className="mt-1 whitespace-pre-wrap text-neutral-500">{slide.body}</p>
-                    )}
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-semibold text-neutral-800 dark:text-neutral-100">
+                        {i + 1}. {slide.headline}
+                      </p>
+                      {slide.tag !== 'none' && (
+                        <span
+                          className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${TAG_BADGE_STYLE[slide.tag]}`}
+                        >
+                          {SLIDE_TAG_LABELS[slide.tag]}
+                        </span>
+                      )}
+                    </div>
+                    {slide.body && <p className="mt-1 whitespace-pre-wrap text-neutral-500">{slide.body}</p>}
+                    <select
+                      value={templateFor(i, slide.tag)}
+                      onChange={(e) => setTemplateOverrides((prev) => ({ ...prev, [i]: e.target.value }))}
+                      className="mt-2 w-full rounded-md border border-neutral-200 bg-neutral-50 px-2 py-1 text-[11px] dark:border-neutral-700 dark:bg-neutral-950"
+                    >
+                      {TEMPLATES.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
                   </li>
                 ))}
               </ul>
