@@ -29,7 +29,13 @@ export function detectSlideTag(headline: string, body: string): SlideTag {
   return 'none'
 }
 
-/** Best-matching cyber template id for a detected tag. */
+/**
+ * Best-matching cyber template id for a detected tag.
+ * `defender-takeaway` is headline-only (no body slot), so plain
+ * headline+body content (the 'none' tag — the common case) is routed
+ * to `checklist` instead, or the body text would be silently dropped
+ * on import.
+ */
 export function templateIdForTag(tag: SlideTag): string {
   switch (tag) {
     case 'question-hook':
@@ -41,7 +47,7 @@ export function templateIdForTag(tag: SlideTag): string {
     case 'cover-hook':
       return 'threat-brief'
     default:
-      return 'defender-takeaway'
+      return 'checklist'
   }
 }
 
@@ -103,6 +109,25 @@ export function parseContent(raw: string): ParsedSlide[] {
   }
 
   return slides
+}
+
+/**
+ * Counts words and characters in a piece of text for template length
+ * guidance. Words: whitespace-split tokens, with punctuation-only tokens
+ * (e.g. "-", "--", "...") filtered out; hyphenated words ("two-factor")
+ * count as one. Chars: the trimmed string's raw length (spaces included).
+ */
+const PUNCTUATION_ONLY = /^[^\p{L}\p{N}]+$/u
+
+export function countText(text: string): { words: number; chars: number } {
+  const trimmed = text.trim()
+  if (!trimmed) return { words: 0, chars: 0 }
+
+  const words = trimmed
+    .split(/\s+/)
+    .filter((token) => token.length > 0 && !PUNCTUATION_ONLY.test(token)).length
+
+  return { words, chars: trimmed.length }
 }
 
 export function parseFile(file: File): Promise<ParsedSlide[]> {

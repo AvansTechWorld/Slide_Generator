@@ -8,9 +8,11 @@ import type {
   SlideElement,
   SlideTemplate,
   TextElement,
+  TextLimit,
   TextRole,
   TextStyle,
 } from '../types'
+import { FALLBACK_TEXT_LIMITS } from '../types'
 
 // ---------- Cyber palette (shared across all templates) ----------
 
@@ -420,20 +422,53 @@ function defenderTakeaway(size: CanvasSize) {
   }
 }
 
+// ---------- Per-template text-length limits (Import preview guidance) ----------
+// Direct matches to the spec'd seed set are used verbatim (listicle, quote-card,
+// before-after, step-by-step). Templates with no equivalent in the spec fall back
+// to the default ceiling rather than guessing a mismatched value.
+
+const limits = {
+  listicle: { headline: { words: 10, chars: 70 }, body: { words: 30, chars: 180 } } satisfies { headline: TextLimit; body: TextLimit },
+  quoteCard: { headline: { words: 15, chars: 100 }, body: { words: 12, chars: 80 } } satisfies { headline: TextLimit; body: TextLimit },
+  beforeAfter: { headline: { words: 8, chars: 60 }, body: { words: 25, chars: 150 } } satisfies { headline: TextLimit; body: TextLimit },
+  stepByStep: { headline: { words: 10, chars: 70 }, body: { words: 30, chars: 180 } } satisfies { headline: TextLimit; body: TextLimit },
+}
+
 export const TEMPLATES: SlideTemplate[] = [
-  { id: 'threat-brief', name: 'Threat Brief', description: 'Dark bg, red accent, big hook headline, swipe cue', build: threatBrief },
-  { id: 'listicle', name: 'Listicle', description: 'Numbered tips on a clean cyber card background', build: listicle },
-  { id: 'before-after', name: 'Before/After', description: 'Split layout comparing a weak vs. strong practice', build: beforeAfter },
-  { id: 'stat-drop', name: 'Stat Drop', description: 'Giant number, small label, source line', build: statDrop },
-  { id: 'quote-card', name: 'Quote Card', description: 'Large quotation mark with attribution', build: quoteCard },
-  { id: 'step-by-step', name: 'Step-by-Step', description: 'STEP badge, headline, body, progress indicator', build: stepByStep },
-  { id: 'myth-vs-fact', name: 'Myth vs Fact', description: 'Two columns: red X myth vs green check fact', build: mythVsFact },
-  { id: 'checklist', name: 'Checklist', description: 'Checkbox-style items for an actionable list', build: checklist },
-  { id: 'news-alert', name: 'News Alert', description: 'BREAKING banner, headline, source and date', build: newsAlert },
-  { id: 'defender-takeaway', name: 'Defender Takeaway', description: 'Green accent, single bold action item, CTA', build: defenderTakeaway },
+  { id: 'threat-brief', name: 'Threat Brief', description: 'Dark bg, red accent, big hook headline, swipe cue', build: threatBrief, limits: FALLBACK_TEXT_LIMITS },
+  { id: 'listicle', name: 'Listicle', description: 'Numbered tips on a clean cyber card background', build: listicle, limits: limits.listicle },
+  { id: 'before-after', name: 'Before/After', description: 'Split layout comparing a weak vs. strong practice', build: beforeAfter, limits: limits.beforeAfter },
+  { id: 'stat-drop', name: 'Stat Drop', description: 'Giant number, small label, source line', build: statDrop, limits: FALLBACK_TEXT_LIMITS },
+  { id: 'quote-card', name: 'Quote Card', description: 'Large quotation mark with attribution', build: quoteCard, limits: limits.quoteCard },
+  { id: 'step-by-step', name: 'Step-by-Step', description: 'STEP badge, headline, body, progress indicator', build: stepByStep, limits: limits.stepByStep },
+  { id: 'myth-vs-fact', name: 'Myth vs Fact', description: 'Two columns: red X myth vs green check fact', build: mythVsFact, limits: FALLBACK_TEXT_LIMITS },
+  { id: 'checklist', name: 'Checklist', description: 'Checkbox-style items for an actionable list', build: checklist, limits: FALLBACK_TEXT_LIMITS },
+  { id: 'news-alert', name: 'News Alert', description: 'BREAKING banner, headline, source and date', build: newsAlert, limits: FALLBACK_TEXT_LIMITS },
+  { id: 'defender-takeaway', name: 'Defender Takeaway', description: 'Green accent, single bold action item, CTA', build: defenderTakeaway, limits: FALLBACK_TEXT_LIMITS },
 ]
 
 export function getTemplate(id: string): SlideTemplate {
   const found = TEMPLATES.find((t) => t.id === id)
   return found ?? TEMPLATES[0]
+}
+
+/** Recommended headline/body limits for a template id, falling back to the default ceiling. */
+export function getTemplateLimits(id: string): { headline: TextLimit; body: TextLimit } {
+  return TEMPLATES.find((t) => t.id === id)?.limits ?? FALLBACK_TEXT_LIMITS
+}
+
+// Computed once at module load (reference canvas size only matters for
+// element geometry, not which roles exist) so callers can cheaply check
+// whether a template has anywhere to put body text before routing content
+// into it.
+const TEMPLATE_BODY_SUPPORT: Record<string, boolean> = Object.fromEntries(
+  TEMPLATES.map((t) => {
+    const { elements } = t.build({ width: 1080, height: 1350 })
+    return [t.id, elements.some((el) => el.kind === 'text' && el.role === 'body')]
+  }),
+)
+
+/** True if this template has a 'body' text slot — false means body content will be dropped on import. */
+export function templateSupportsBody(id: string): boolean {
+  return TEMPLATE_BODY_SUPPORT[id] ?? false
 }
