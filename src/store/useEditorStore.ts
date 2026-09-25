@@ -95,6 +95,11 @@ export interface EditorState extends ProjectState {
   reorderSlides: (orderedIds: string[]) => void
   setActiveSlide: (slideId: string) => void
   applyTemplate: (slideId: string, templateId: string) => void
+  importSlides: (
+    blocks: { headline: string; body: string }[],
+    templateId: string,
+    mode: 'replace' | 'append',
+  ) => void
 
   // Element actions
   selectElement: (elementId: string | null) => void
@@ -242,6 +247,33 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       slide.background = background
       slide.elements = elements
       slide.name = template.name
+      draft.selectedElementId = null
+      return draft
+    })
+  },
+
+  importSlides: (blocks, templateId, mode) => {
+    commit(set, get, (draft) => {
+      const size = canvasSizeFor(draft.aspectRatio)
+      const capped = blocks.slice(0, MAX_SLIDES)
+      const newSlides = capped.map((b) => {
+        const slide = makeSlide(size, templateId)
+        for (const el of slide.elements) {
+          if (el.kind !== 'text') continue
+          if (el.role === 'headline') el.content = b.headline
+          if (el.role === 'body') el.content = b.body
+        }
+        return slide
+      })
+
+      if (mode === 'replace') {
+        draft.slides = newSlides.length > 0 ? newSlides : draft.slides
+      } else {
+        const room = Math.max(0, MAX_SLIDES - draft.slides.length)
+        draft.slides.push(...newSlides.slice(0, room))
+      }
+
+      draft.activeSlideId = draft.slides[0]?.id ?? null
       draft.selectedElementId = null
       return draft
     })

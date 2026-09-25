@@ -3,6 +3,7 @@ import { useEditorStore } from '../store/useEditorStore'
 import type { AspectRatioKey } from '../types'
 import ExportButton from './ExportButton'
 import TemplatePicker from './TemplatePicker'
+import ContentImporter from './ContentImporter'
 
 const ASPECT_OPTIONS: { key: AspectRatioKey; label: string }[] = [
   { key: '4:5', label: '4:5' },
@@ -26,6 +27,7 @@ export default function Toolbar() {
   const addImageElement = useEditorStore((s) => s.addImageElement)
 
   const [showTemplates, setShowTemplates] = useState(false)
+  const [showImporter, setShowImporter] = useState(false)
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-neutral-200 bg-white px-4 dark:border-neutral-800 dark:bg-neutral-950">
@@ -69,6 +71,14 @@ export default function Toolbar() {
           className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
         >
           Templates
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowImporter(true)}
+          className="rounded-md bg-accent/10 px-2.5 py-1.5 text-xs font-semibold text-accent hover:bg-accent/20"
+        >
+          Import content
         </button>
 
         <div className="mx-1 h-5 w-px bg-neutral-200 dark:bg-neutral-800" />
@@ -126,6 +136,7 @@ export default function Toolbar() {
       </div>
 
       {showTemplates && <TemplatePicker onClose={() => setShowTemplates(false)} />}
+      {showImporter && <ContentImporter onClose={() => setShowImporter(false)} />}
     </header>
   )
 }
