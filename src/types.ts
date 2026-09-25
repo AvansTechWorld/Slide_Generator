@@ -153,10 +153,14 @@ export interface BrandKit {
 
 // ---------- Templates ----------
 
-/** Recommended text-length ceiling for a headline or body field. */
-export interface TextLimit {
+export interface TemplateFieldLimit {
   words: number
   chars: number
+}
+
+export interface TemplateLimits {
+  headline: TemplateFieldLimit
+  body: TemplateFieldLimit
 }
 
 export interface SlideTemplate {
@@ -164,17 +168,7 @@ export interface SlideTemplate {
   name: string
   description: string
   build: (canvasSize: CanvasSize) => { background: SlideBackground; elements: SlideElement[] }
-  /** Recommended headline/body length for this template's layout (Import preview guidance). */
-  limits: {
-    headline: TextLimit
-    body: TextLimit
-  }
-}
-
-/** Used for any template that doesn't define its own limits. */
-export const FALLBACK_TEXT_LIMITS: { headline: TextLimit; body: TextLimit } = {
-  headline: { words: 8, chars: 60 },
-  body: { words: 25, chars: 150 },
+  limits?: TemplateLimits
 }
 
 // ---------- Caption + hashtag builder ----------

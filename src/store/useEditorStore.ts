@@ -167,8 +167,8 @@ export interface EditorState extends ProjectState {
 
   // Bulk edit ("Apply to all")
   applyToAllSlides: (kind: BulkEditKind, value: string) => void
-  setToast: (message: string) => void
   clearToast: () => void
+  showToast: (message: string) => void
 
   // Canvas / view
   setAspectRatio: (ratio: AspectRatioKey) => void
@@ -516,8 +516,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set(() => ({ lastToast: `Applied to all ${get().slides.length} slides` }))
   },
 
-  setToast: (message) => set(() => ({ lastToast: message })),
   clearToast: () => set(() => ({ lastToast: null })),
+
+  showToast: (message) => set(() => ({ lastToast: message })),
 
   setAspectRatio: (ratio) => {
     commit(set, get, (draft) => {

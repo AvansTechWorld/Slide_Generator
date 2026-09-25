@@ -1,134 +1,106 @@
 import { countText } from './parseContent'
+import type { TemplateFieldLimit } from '../types'
 
-interface TextLimit {
-  words: number
-  chars: number
-}
-
-function fitsLimit(text: string, limit: TextLimit): boolean {
-  const { words, chars } = countText(text)
-  return words <= limit.words && chars <= limit.chars
-}
-
-// Word-boundary replace, case-insensitive, collapses the extra space left
-// behind when a whole word/phrase is removed outright.
-function replaceAll(text: string, pattern: string, replacement: string): string {
-  const re = new RegExp(`\\b${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi')
-  return text.replace(re, replacement)
+function fits(text: string, limit: TemplateFieldLimit): boolean {
+  const count = countText(text)
+  return count.words <= limit.words && count.chars <= limit.chars
 }
 
 const ADVERBS = ['very', 'really', 'just', 'actually', 'literally', 'basically', 'simply', 'quite']
 
-const FILLER_OPENERS: [string, string][] = [
-  ['in order to', 'to'],
-  ['due to the fact that', 'because'],
-  ['at this point in time', 'now'],
-]
-
-const PHRASE_SWAPS: [string, string][] = [
-  ['is able to', 'can'],
-  ['in the event that', 'if'],
-  ['utilize', 'use'],
-]
-
-const CUT_QUALIFIERS = ['in my opinion', 'i think that', 'it should be noted that']
-
-function collapseSpaces(text: string): string {
-  return text.replace(/[ \t]{2,}/g, ' ').replace(/\s+([,.!?])/g, '$1').trim()
-}
-
 function removeAdverbs(text: string): string {
   let result = text
   for (const adverb of ADVERBS) {
-    result = replaceAll(result, adverb, '')
+    result = result.replace(new RegExp(`\\b${adverb}\\b\\s*`, 'gi'), '')
   }
-  return collapseSpaces(result)
+  return result.replace(/\s{2,}/g, ' ').trim()
 }
 
-function replaceFillerOpeners(text: string): string {
+const FILLER_OPENERS: [RegExp, string][] = [
+  [/^in order to\s+/i, 'To '],
+  [/^due to the fact that\s+/i, 'Because '],
+  [/^at this point in time\s*,?\s*/i, 'Now '],
+]
+
+function removeFillerOpeners(text: string): string {
   let result = text
-  for (const [phrase, replacement] of FILLER_OPENERS) {
-    result = replaceAll(result, phrase, replacement)
+  for (const [pattern, replacement] of FILLER_OPENERS) {
+    result = result.replace(pattern, replacement)
   }
-  return collapseSpaces(result)
+  return result.trim()
 }
 
-function applyPhraseSwaps(text: string): string {
+const PHRASE_REPLACEMENTS: [RegExp, string][] = [
+  [/\bis able to\b/gi, 'can'],
+  [/\bin the event that\b/gi, 'if'],
+  [/\butilize\b/gi, 'use'],
+]
+
+function replacePhrases(text: string): string {
   let result = text
-  for (const [phrase, replacement] of PHRASE_SWAPS) {
-    result = replaceAll(result, phrase, replacement)
+  for (const [pattern, replacement] of PHRASE_REPLACEMENTS) {
+    result = result.replace(pattern, replacement)
   }
-  return collapseSpaces(result)
+  return result
 }
+
+const QUALIFIERS = [/\bin my opinion,?\s*/gi, /\bi think that\s*/gi, /\bit should be noted that\s*/gi]
 
 function cutQualifiers(text: string): string {
   let result = text
-  for (const qualifier of CUT_QUALIFIERS) {
-    result = replaceAll(result, qualifier, '')
+  for (const pattern of QUALIFIERS) {
+    result = result.replace(pattern, '')
   }
-  return collapseSpaces(result)
+  return result.replace(/\s{2,}/g, ' ').trim()
 }
 
-// Splits sentences over 20 words at their first comma, keeping only the
-// first clause. Applied per-sentence so short sentences are untouched.
+/** Splits a sentence longer than 20 words at its first comma, keeping the first half. */
 function splitLongSentences(text: string): string {
   const sentences = text.split(/(?<=[.!?])\s+/)
   const shortened = sentences.map((sentence) => {
-    const wordCount = sentence.trim().split(/\s+/).filter(Boolean).length
-    if (wordCount <= 20) return sentence
+    const { words } = countText(sentence)
+    if (words <= 20) return sentence
     const commaIndex = sentence.indexOf(',')
     if (commaIndex === -1) return sentence
-    const clause = sentence.slice(0, commaIndex).trim()
-    return /[.!?]$/.test(clause) ? clause : `${clause}.`
+    const head = sentence.slice(0, commaIndex).trim()
+    const endsWithPunctuation = /[.!?]$/.test(sentence.trim())
+    return endsWithPunctuation ? `${head}.` : head
   })
-  return collapseSpaces(shortened.join(' '))
+  return shortened.join(' ').trim()
 }
 
-// Truncates to the last complete word that fits within both the word and
-// char ceilings, then appends an ellipsis.
-function truncateToLimit(text: string, limit: TextLimit): string {
-  const words = text.trim().split(/\s+/)
-  let result = ''
-  for (const word of words) {
-    const candidate = result ? `${result} ${word}` : word
-    const withEllipsis = `${candidate}…`
-    const { words: w, chars: c } = countText(withEllipsis)
-    if (w > limit.words || c > limit.chars) break
-    result = candidate
-  }
-  if (!result) {
-    // Even one word doesn't fit under the char limit; hard-cut by chars.
-    result = text.trim().slice(0, Math.max(0, limit.chars - 1)).trim()
-  }
-  return `${result}…`
+/** Truncates to the last complete word that fits under the char limit, appending an ellipsis. */
+function truncateToLimit(text: string, limit: TemplateFieldLimit): string {
+  if (text.length <= limit.chars) return text
+  const budget = Math.max(0, limit.chars - 1) // leave room for the ellipsis
+  const sliced = text.slice(0, budget)
+  const lastSpace = sliced.lastIndexOf(' ')
+  const cut = lastSpace > 0 ? sliced.slice(0, lastSpace) : sliced
+  return `${cut.trim()}…`
 }
 
 /**
- * Rules-based, client-side text tightener. Applies each rule in order,
- * stopping as soon as the text fits the given word/char limit. Never
- * called automatically — callers show the result as a suggestion the
- * user can accept or dismiss.
+ * Rules-based, client-side rewrite that shortens `text` toward `limit`.
+ * Applies each step in order, stopping as soon as the text fits. Never
+ * calls an API and never auto-applies — callers show the result as a
+ * suggestion the user can accept or dismiss.
  */
-export function tighten(text: string, limit: TextLimit): string {
-  if (fitsLimit(text, limit)) return text
+export function tighten(text: string, limit: TemplateFieldLimit): string {
+  let result = text.trim()
+  if (fits(result, limit)) return result
 
-  let result = text
+  const steps: ((t: string) => string)[] = [
+    removeAdverbs,
+    removeFillerOpeners,
+    replacePhrases,
+    cutQualifiers,
+    splitLongSentences,
+  ]
 
-  result = removeAdverbs(result)
-  if (fitsLimit(result, limit)) return result
+  for (const step of steps) {
+    result = step(result)
+    if (fits(result, limit)) return result
+  }
 
-  result = replaceFillerOpeners(result)
-  if (fitsLimit(result, limit)) return result
-
-  result = applyPhraseSwaps(result)
-  if (fitsLimit(result, limit)) return result
-
-  result = cutQualifiers(result)
-  if (fitsLimit(result, limit)) return result
-
-  result = splitLongSentences(result)
-  if (fitsLimit(result, limit)) return result
-
-  result = truncateToLimit(result, limit)
-  return result
+  return truncateToLimit(result, limit)
 }
